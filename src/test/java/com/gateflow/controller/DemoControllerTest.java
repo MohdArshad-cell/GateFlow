@@ -106,5 +106,28 @@ class DemoControllerTest {
                 .andExpect(header().string("X-RateLimit-Algorithm", "SLIDING_WINDOW"))
                 .andExpect(jsonPath("$.status").value("authenticated"));
     }
+
+    @Test
+    @DisplayName("GET /api/users/{userId}/orders evaluates SpEL key and enforces sliding window")
+    void testUserOrdersSpelRateLimit() throws Exception {
+        when(rateLimiterService.tryAcquire(anyString(), anyInt(), anyInt(), anyInt(), anyInt(), eq(Algorithm.SLIDING_WINDOW)))
+                .thenReturn(RateLimitResult.allowed(9L, "SLIDING_WINDOW"));
+
+        mockMvc.perform(get("/api/users/user_12345/orders"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-RateLimit-Remaining", "9"))
+                .andExpect(header().string("X-RateLimit-Algorithm", "SLIDING_WINDOW"))
+                .andExpect(jsonPath("$.status").value("success"))
+                .andExpect(jsonPath("$.userId").value("user_12345"));
+    }
+
+    @Test
+    @DisplayName("GET /api/tier/info returns subscription quota from API Key")
+    void testTierInfo() throws Exception {
+        mockMvc.perform(get("/api/tier/info").header("X-API-KEY", "key_pro_456"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tier").value("PRO"))
+                .andExpect(jsonPath("$.limit").value(100));
+    }
 }
 

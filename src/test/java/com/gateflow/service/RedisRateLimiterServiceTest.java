@@ -56,12 +56,14 @@ class RedisRateLimiterServiceTest {
         properties.setDefaultWindowSizeSeconds(60);
         properties.setDefaultMaxRequests(10);
 
+        InMemoryFallbackLimiter inMemoryFallbackLimiter = new InMemoryFallbackLimiter();
         service = new RedisRateLimiterService(
                 redisTemplate,
                 tokenBucketScript,
                 slidingWindowScript,
                 properties,
-                metrics
+                metrics,
+                inMemoryFallbackLimiter
         );
     }
 
@@ -126,7 +128,7 @@ class RedisRateLimiterServiceTest {
     }
 
     @Test
-    @DisplayName("Fail-open policy: Allows request when Redis is down")
+    @DisplayName("Fail-open policy: Gracefully degrades to in-memory fallback when Redis is down")
     void testFailOpenOnRedisError() {
         properties.setFailOpen(true);
         when(redisTemplate.execute(any(RedisScript.class), any(), any(Object[].class)))
@@ -135,7 +137,7 @@ class RedisRateLimiterServiceTest {
         RateLimitResult result = service.tryAcquire("err-key", 10, 2, 0, 0, Algorithm.TOKEN_BUCKET);
 
         assertThat(result.allowed()).isTrue();
-        assertThat(result.algorithm()).contains("FAIL_OPEN");
+        assertThat(result.algorithm()).isEqualTo("IN_MEMORY_FALLBACK");
     }
 
     @Test

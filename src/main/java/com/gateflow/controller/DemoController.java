@@ -1,17 +1,23 @@
 package com.gateflow.controller;
 
+import com.gateflow.annotation.DistributedRateLimit;
 import com.gateflow.annotation.RateLimit;
 import com.gateflow.model.Algorithm;
 import com.gateflow.model.RateLimitResult;
+import com.gateflow.service.TierService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -19,7 +25,10 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api")
+@RequiredArgsConstructor
 public class DemoController {
+
+    private final TierService tierService;
 
     /**
      * Public endpoint with no rate limit applied (subject only to global filter).
@@ -75,6 +84,36 @@ public class DemoController {
         response.put("retryAfterMs", result.retryAfterMs());
         response.put("timestamp", Instant.now().toString());
         return ResponseEntity.status(429).body(response);
+    }
+
+    /**
+     * Endpoint demonstrating @DistributedRateLimit with SpEL key evaluation:
+     * Rate limits per specific userId parameter dynamically across the sliding window.
+     */
+    @DistributedRateLimit(key = "#userId", limit = 10, windowInSeconds = 60)
+    @GetMapping("/users/{userId}/orders")
+    public ResponseEntity<Map<String, Object>> getUserOrders(@PathVariable("userId") String userId) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", "success");
+        response.put("userId", userId);
+        response.put("orders", List.of("ORD-101", "ORD-102"));
+        response.put("timestamp", Instant.now().toString());
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Dynamic Tiering endpoint:
+     * Inspects subscription tier (FREE, PRO, ENTERPRISE) from API key.
+     */
+    @GetMapping("/tier/info")
+    public ResponseEntity<Map<String, Object>> getTierInfo(@RequestHeader(value = "X-API-KEY", required = false) String apiKey) {
+        TierService.Tier tier = tierService.resolveTier(apiKey);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("apiKey", apiKey != null ? apiKey : "anonymous");
+        response.put("tier", tier.name());
+        response.put("limit", tier.getLimit());
+        response.put("windowSeconds", tier.getWindowSeconds());
+        return ResponseEntity.ok(response);
     }
 
     /**

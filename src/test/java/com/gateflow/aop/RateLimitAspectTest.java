@@ -1,5 +1,6 @@
 package com.gateflow.aop;
 
+import com.gateflow.annotation.DistributedRateLimit;
 import com.gateflow.annotation.RateLimit;
 import com.gateflow.config.RateLimiterProperties;
 import com.gateflow.exception.RateLimitExceededException;
@@ -26,6 +27,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -45,13 +48,16 @@ class RateLimitAspectTest {
     @Mock
     private RateLimit rateLimit;
 
+    @Mock
+    private DistributedRateLimit distributedRateLimit;
+
     private RateLimiterProperties properties;
     private RateLimitAspect aspect;
     private MockHttpServletRequest request;
     private MockHttpServletResponse response;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws NoSuchMethodException {
         properties = new RateLimiterProperties();
         properties.setEnabled(true);
         aspect = new RateLimitAspect(rateLimiterService, properties);
@@ -59,6 +65,11 @@ class RateLimitAspectTest {
         request = new MockHttpServletRequest("GET", "/api/test");
         response = new MockHttpServletResponse();
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request, response));
+
+        Method method = TestController.class.getMethod("action");
+        when(joinPoint.getSignature()).thenReturn(methodSignature);
+        when(methodSignature.getMethod()).thenReturn(method);
+        when(joinPoint.getArgs()).thenReturn(new Object[]{});
     }
 
     @Test
@@ -108,15 +119,12 @@ class RateLimitAspectTest {
     @DisplayName("AOP: Denied request with fallback invokes target fallback method")
     void testDeniedRequestWithFallback() throws Throwable {
         TestController target = new TestController();
-        Method method = TestController.class.getMethod("action");
 
         when(rateLimit.key()).thenReturn("");
         when(rateLimit.algorithm()).thenReturn(Algorithm.TOKEN_BUCKET);
         when(rateLimit.fallbackMethod()).thenReturn("actionFallback");
 
         when(joinPoint.getTarget()).thenReturn(target);
-        when(joinPoint.getSignature()).thenReturn(methodSignature);
-        when(methodSignature.getMethod()).thenReturn(method);
 
         when(rateLimiterService.tryAcquire(anyString(), anyInt(), anyInt(), anyInt(), anyInt(), any()))
                 .thenReturn(RateLimitResult.denied(0L, 3000L, "TOKEN_BUCKET"));
@@ -139,6 +147,30 @@ class RateLimitAspectTest {
         verify(rateLimiterService, never()).tryAcquire(any(), anyInt(), anyInt(), anyInt(), anyInt(), any());
     }
 
+    @Test
+    @DisplayName("AOP: @DistributedRateLimit evaluates SpEL key and applies sliding window")
+    void testDistributedRateLimitSpEL() throws Throwable {
+        Method userMethod = TestController.class.getMethod("getUser", String.class);
+        when(methodSignature.getMethod()).thenReturn(userMethod);
+        when(joinPoint.getArgs()).thenReturn(new Object[]{"user_999"});
+
+        when(distributedRateLimit.key()).thenReturn("#userId");
+        when(distributedRateLimit.limit()).thenReturn(10);
+        when(distributedRateLimit.windowInSeconds()).thenReturn(60);
+        when(distributedRateLimit.algorithm()).thenReturn(Algorithm.SLIDING_WINDOW);
+        when(distributedRateLimit.fallbackMethod()).thenReturn("");
+
+        when(rateLimiterService.tryAcquire(contains("user_999"), eq(10), eq(0), eq(60), eq(10), eq(Algorithm.SLIDING_WINDOW)))
+                .thenReturn(RateLimitResult.allowed(9L, "SLIDING_WINDOW"));
+        when(joinPoint.proceed()).thenReturn("user-data");
+
+        Object result = aspect.enforceDistributedRateLimit(joinPoint, distributedRateLimit);
+
+        assertThat(result).isEqualTo("user-data");
+        assertThat(response.getHeader("X-RateLimit-Remaining")).isEqualTo("9");
+        assertThat(response.getHeader("X-RateLimit-Algorithm")).isEqualTo("SLIDING_WINDOW");
+    }
+
     static class TestController {
         public String action() {
             return "original";
@@ -147,6 +179,9 @@ class RateLimitAspectTest {
         public String actionFallback(RateLimitResult result) {
             return "fallback-invoked-" + result.retryAfterMs();
         }
+
+        public String getUser(String userId) {
+            return "user:" + userId;
+        }
     }
 }
-

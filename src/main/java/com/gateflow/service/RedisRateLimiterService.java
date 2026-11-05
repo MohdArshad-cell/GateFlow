@@ -35,6 +35,7 @@ public class RedisRateLimiterService implements RateLimiterService {
     private final RedisScript<List<Long>> slidingWindowScript;
     private final RateLimiterProperties properties;
     private final RateLimiterMetrics metrics;
+    private final InMemoryFallbackLimiter inMemoryFallbackLimiter;
 
     @Override
     public RateLimitResult tryAcquire(
@@ -79,8 +80,10 @@ public class RedisRateLimiterService implements RateLimiterService {
             log.error("Redis rate limiter execution failure for key: {}", key, ex);
 
             if (properties.isFailOpen()) {
-                log.warn("Fail-open active: allowing request despite Redis error for key: {}", key);
-                return RateLimitResult.allowed(1L, resolvedAlgorithm.name() + "_FAIL_OPEN");
+                log.warn("Fail-open active: gracefully degrading to in-memory fallback for key: {}", key);
+                int effLimit = maxRequests > 0 ? maxRequests : (capacity > 0 ? capacity : properties.getDefaultMaxRequests());
+                int effWindow = windowSizeSeconds > 0 ? windowSizeSeconds : properties.getDefaultWindowSizeSeconds();
+                return inMemoryFallbackLimiter.tryAcquire(key, effLimit, effWindow);
             } else {
                 throw new RateLimitExceededException(
                         "Rate limiter unavailable and fail-open is disabled: " + ex.getMessage(),

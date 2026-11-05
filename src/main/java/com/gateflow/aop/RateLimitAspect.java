@@ -1,5 +1,6 @@
 package com.gateflow.aop;
 
+import com.gateflow.annotation.DistributedRateLimit;
 import com.gateflow.annotation.RateLimit;
 import com.gateflow.config.RateLimiterProperties;
 import com.gateflow.exception.RateLimitExceededException;
@@ -7,6 +8,7 @@ import com.gateflow.model.Algorithm;
 import com.gateflow.model.RateLimitResult;
 import com.gateflow.service.RateLimiterService;
 import com.gateflow.util.KeyGenerator;
+import com.gateflow.util.SpelEvaluator;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -25,8 +27,9 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import java.lang.reflect.Method;
 
 /**
- * Aspect-Oriented Programming (AOP) interceptor that inspects methods annotated with @RateLimit.
- * Enforces atomic Redis rate checks with sub-2ms overhead.
+ * Aspect-Oriented Programming (AOP) interceptor that inspects methods annotated with
+ * either @RateLimit or @DistributedRateLimit. Supports Spring Expression Language (SpEL)
+ * parameter extraction (e.g. key = "#userId") and attaches RFC standard rate limit headers.
  */
 @Slf4j
 @Aspect
@@ -40,6 +43,48 @@ public class RateLimitAspect {
 
     @Around("@annotation(rateLimit)")
     public Object enforceRateLimit(ProceedingJoinPoint joinPoint, RateLimit rateLimit) throws Throwable {
+        MethodSignature signature = (MethodSignature) joinPoint.getSignature();
+        String evaluatedKey = SpelEvaluator.evaluate(rateLimit.key(), signature.getMethod(), joinPoint.getArgs());
+
+        return doEnforce(
+                joinPoint,
+                evaluatedKey,
+                rateLimit.capacity(),
+                rateLimit.refillRate(),
+                rateLimit.windowSizeSeconds(),
+                rateLimit.maxRequests(),
+                rateLimit.algorithm(),
+                rateLimit.fallbackMethod()
+        );
+    }
+
+    @Around("@annotation(distributedRateLimit)")
+    public Object enforceDistributedRateLimit(ProceedingJoinPoint joinPoint, DistributedRateLimit distributedRateLimit) throws Throwable {
+        MethodSignature signature = (MethodSignature) joinPoint.getSignature();
+        String evaluatedKey = SpelEvaluator.evaluate(distributedRateLimit.key(), signature.getMethod(), joinPoint.getArgs());
+
+        return doEnforce(
+                joinPoint,
+                evaluatedKey,
+                distributedRateLimit.limit(),
+                0,
+                distributedRateLimit.windowInSeconds(),
+                distributedRateLimit.limit(),
+                distributedRateLimit.algorithm(),
+                distributedRateLimit.fallbackMethod()
+        );
+    }
+
+    private Object doEnforce(
+            ProceedingJoinPoint joinPoint,
+            String evaluatedKey,
+            int capacity,
+            int refillRate,
+            int windowSizeSeconds,
+            int maxRequests,
+            Algorithm targetAlgorithm,
+            String fallbackMethodName
+    ) throws Throwable {
         if (!properties.isEnabled()) {
             return joinPoint.proceed();
         }
@@ -49,21 +94,16 @@ public class RateLimitAspect {
         HttpServletRequest request = attributes != null ? attributes.getRequest() : null;
         HttpServletResponse response = attributes != null ? attributes.getResponse() : null;
 
-        Algorithm algorithm = (rateLimit.algorithm() == Algorithm.DEFAULT)
+        Algorithm algorithm = (targetAlgorithm == Algorithm.DEFAULT)
                 ? properties.getDefaultAlgorithm()
-                : rateLimit.algorithm();
+                : targetAlgorithm;
 
         String clientIp = KeyGenerator.extractClientIp(request);
-        String identifier = StringUtils.hasText(rateLimit.key()) ? rateLimit.key() : clientIp;
+        String identifier = StringUtils.hasText(evaluatedKey) ? evaluatedKey : clientIp;
         String method = request != null ? request.getMethod() : "EXEC";
         String endpoint = request != null ? request.getRequestURI() : joinPoint.getSignature().toShortString();
 
         String redisKey = KeyGenerator.generateKey(algorithm.name(), identifier, method, endpoint);
-
-        int capacity = rateLimit.capacity();
-        int refillRate = rateLimit.refillRate();
-        int windowSizeSeconds = rateLimit.windowSizeSeconds();
-        int maxRequests = rateLimit.maxRequests();
 
         RateLimitResult result = rateLimiterService.tryAcquire(
                 redisKey,
@@ -87,8 +127,8 @@ public class RateLimitAspect {
         }
 
         // Rate limit exceeded
-        if (StringUtils.hasText(rateLimit.fallbackMethod())) {
-            return invokeFallbackMethod(joinPoint, rateLimit.fallbackMethod(), result);
+        if (StringUtils.hasText(fallbackMethodName)) {
+            return invokeFallbackMethod(joinPoint, fallbackMethodName, result);
         }
 
         throw new RateLimitExceededException(
@@ -124,4 +164,3 @@ public class RateLimitAspect {
         }
     }
 }
-
