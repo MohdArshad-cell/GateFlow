@@ -24,12 +24,16 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 /**
- * Aspect-Oriented Programming (AOP) interceptor that inspects methods annotated with
- * either @RateLimit or @DistributedRateLimit. Supports Spring Expression Language (SpEL)
- * parameter extraction (e.g. key = "#userId") and attaches RFC standard rate limit headers.
+ * Aspect-Oriented Programming (AOP) interceptor that inspects methods annotated
+ * with
+ * either @RateLimit or @DistributedRateLimit. Supports Spring Expression
+ * Language (SpEL)
+ * parameter extraction (e.g. key = "#userId") and attaches RFC standard rate
+ * limit headers.
  */
 @Slf4j
 @Aspect
@@ -41,7 +45,7 @@ public class RateLimitAspect {
     private final RateLimiterService rateLimiterService;
     private final RateLimiterProperties properties;
 
-    @Around("@annotation(rateLimit)")
+    @Around(value = "@annotation(rateLimit)", argNames = "joinPoint,rateLimit")
     public Object enforceRateLimit(ProceedingJoinPoint joinPoint, RateLimit rateLimit) throws Throwable {
         MethodSignature signature = (MethodSignature) joinPoint.getSignature();
         String evaluatedKey = SpelEvaluator.evaluate(rateLimit.key(), signature.getMethod(), joinPoint.getArgs());
@@ -54,14 +58,15 @@ public class RateLimitAspect {
                 rateLimit.windowSizeSeconds(),
                 rateLimit.maxRequests(),
                 rateLimit.algorithm(),
-                rateLimit.fallbackMethod()
-        );
+                rateLimit.fallbackMethod());
     }
 
-    @Around("@annotation(distributedRateLimit)")
-    public Object enforceDistributedRateLimit(ProceedingJoinPoint joinPoint, DistributedRateLimit distributedRateLimit) throws Throwable {
+    @Around(value = "@annotation(distributedRateLimit)", argNames = "joinPoint,distributedRateLimit")
+    public Object enforceDistributedRateLimit(ProceedingJoinPoint joinPoint, DistributedRateLimit distributedRateLimit)
+            throws Throwable {
         MethodSignature signature = (MethodSignature) joinPoint.getSignature();
-        String evaluatedKey = SpelEvaluator.evaluate(distributedRateLimit.key(), signature.getMethod(), joinPoint.getArgs());
+        String evaluatedKey = SpelEvaluator.evaluate(distributedRateLimit.key(), signature.getMethod(),
+                joinPoint.getArgs());
 
         return doEnforce(
                 joinPoint,
@@ -71,8 +76,7 @@ public class RateLimitAspect {
                 distributedRateLimit.windowInSeconds(),
                 distributedRateLimit.limit(),
                 distributedRateLimit.algorithm(),
-                distributedRateLimit.fallbackMethod()
-        );
+                distributedRateLimit.fallbackMethod());
     }
 
     private Object doEnforce(
@@ -83,14 +87,12 @@ public class RateLimitAspect {
             int windowSizeSeconds,
             int maxRequests,
             Algorithm targetAlgorithm,
-            String fallbackMethodName
-    ) throws Throwable {
+            String fallbackMethodName) throws Throwable {
         if (!properties.isEnabled()) {
             return joinPoint.proceed();
         }
 
-        ServletRequestAttributes attributes =
-                (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         HttpServletRequest request = attributes != null ? attributes.getRequest() : null;
         HttpServletResponse response = attributes != null ? attributes.getResponse() : null;
 
@@ -111,8 +113,7 @@ public class RateLimitAspect {
                 refillRate,
                 windowSizeSeconds,
                 maxRequests,
-                algorithm
-        );
+                algorithm);
 
         if (result.allowed()) {
             if (response != null) {
@@ -134,8 +135,7 @@ public class RateLimitAspect {
         throw new RateLimitExceededException(
                 result.retryAfterMs(),
                 result.remainingTokens(),
-                result.algorithm()
-        );
+                result.algorithm());
     }
 
     private Object invokeFallbackMethod(ProceedingJoinPoint joinPoint, String fallbackMethodName, RateLimitResult result) throws Throwable {
@@ -160,7 +160,11 @@ public class RateLimitAspect {
             } catch (NoSuchMethodException ex) {
                 log.error("Fallback method {} not found on {}", fallbackMethodName, targetClass.getName());
                 throw new RateLimitExceededException(result.retryAfterMs(), result.remainingTokens(), result.algorithm());
+            } catch (InvocationTargetException ite) {
+                throw ite.getTargetException();
             }
+        } catch (InvocationTargetException ite) {
+            throw ite.getTargetException();
         }
     }
 }

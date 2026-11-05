@@ -163,7 +163,7 @@ public class RedisRateLimiterService implements RateLimiterService {
         stats.put("defaultAlgorithm", properties.getDefaultAlgorithm());
 
         try {
-            Properties info = redisTemplate.execute((RedisCallback<Properties>) RedisConnection::info);
+            Properties info = redisTemplate.execute((RedisCallback<Properties>) connection -> connection.serverCommands().info());
             if (info != null) {
                 stats.put("redisVersion", info.getProperty("redis_version", "unknown"));
                 stats.put("connectedClients", info.getProperty("connected_clients", "unknown"));

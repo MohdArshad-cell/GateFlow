@@ -119,7 +119,7 @@ class RedisRateLimiterServiceTest {
     @DisplayName("Fail-close policy: Throws RateLimitExceededException when Redis is down")
     void testFailCloseOnRedisError() {
         properties.setFailOpen(false);
-        when(redisTemplate.execute(any(RedisScript.class), any(), any(Object[].class)))
+        when(redisTemplate.execute(eq(tokenBucketScript), any(), any(Object[].class)))
                 .thenThrow(new RuntimeException("Redis connection refused"));
 
         assertThatThrownBy(() -> service.tryAcquire("err-key", 10, 2, 0, 0, Algorithm.TOKEN_BUCKET))
@@ -131,7 +131,7 @@ class RedisRateLimiterServiceTest {
     @DisplayName("Fail-open policy: Gracefully degrades to in-memory fallback when Redis is down")
     void testFailOpenOnRedisError() {
         properties.setFailOpen(true);
-        when(redisTemplate.execute(any(RedisScript.class), any(), any(Object[].class)))
+        when(redisTemplate.execute(eq(tokenBucketScript), any(), any(Object[].class)))
                 .thenThrow(new RuntimeException("Redis connection timed out"));
 
         RateLimitResult result = service.tryAcquire("err-key", 10, 2, 0, 0, Algorithm.TOKEN_BUCKET);
