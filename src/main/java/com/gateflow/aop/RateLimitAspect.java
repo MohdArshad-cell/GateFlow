@@ -24,7 +24,6 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 /**
@@ -45,7 +44,7 @@ public class RateLimitAspect {
     private final RateLimiterService rateLimiterService;
     private final RateLimiterProperties properties;
 
-    @Around(value = "@annotation(rateLimit)", argNames = "joinPoint,rateLimit")
+    @Around("@annotation(rateLimit)")
     public Object enforceRateLimit(ProceedingJoinPoint joinPoint, RateLimit rateLimit) throws Throwable {
         MethodSignature signature = (MethodSignature) joinPoint.getSignature();
         String evaluatedKey = SpelEvaluator.evaluate(rateLimit.key(), signature.getMethod(), joinPoint.getArgs());
@@ -61,7 +60,7 @@ public class RateLimitAspect {
                 rateLimit.fallbackMethod());
     }
 
-    @Around(value = "@annotation(distributedRateLimit)", argNames = "joinPoint,distributedRateLimit")
+    @Around("@annotation(distributedRateLimit)")
     public Object enforceDistributedRateLimit(ProceedingJoinPoint joinPoint, DistributedRateLimit distributedRateLimit)
             throws Throwable {
         MethodSignature signature = (MethodSignature) joinPoint.getSignature();
@@ -160,11 +159,7 @@ public class RateLimitAspect {
             } catch (NoSuchMethodException ex) {
                 log.error("Fallback method {} not found on {}", fallbackMethodName, targetClass.getName());
                 throw new RateLimitExceededException(result.retryAfterMs(), result.remainingTokens(), result.algorithm());
-            } catch (InvocationTargetException ite) {
-                throw ite.getTargetException();
             }
-        } catch (InvocationTargetException ite) {
-            throw ite.getTargetException();
         }
     }
 }

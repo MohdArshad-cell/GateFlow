@@ -3,7 +3,8 @@
 # 🛡️ GateFlow
 ### Distributed Rate Limiter Middleware for High-Traffic Microservices
 
-[![Java 17](https://img.shields.io/badge/Java-17-orange.svg?logo=openjdk)](https://openjdk.org/)
+[![CI Pipeline](https://github.com/MohdArshad-cell/GateFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/MohdArshad-cell/GateFlow/actions/workflows/ci.yml)
+[![Java 17](https://img.shields.io/badge/Java-17%20%7C%2021-orange.svg?logo=openjdk)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.5-brightgreen.svg?logo=springboot)](https://spring.io/projects/spring-boot)
 [![Redis](https://img.shields.io/badge/Redis-7.2-red.svg?logo=redis)](https://redis.io/)
 [![Lua](https://img.shields.io/badge/Lua-5.1-blue.svg?logo=lua)](https://www.lua.org/)
