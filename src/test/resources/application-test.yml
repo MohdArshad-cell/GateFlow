@@ -1,0 +1,35 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: gateflow-test
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration
+  data:
+    redis:
+      host: localhost
+      port: 6370
+      timeout: 1000ms
+
+management:
+  health:
+    redis:
+      enabled: false
+
+rate-limiter:
+  enabled: true
+  fail-open: true
+  default-algorithm: TOKEN_BUCKET
+  default-capacity: 10
+  default-refill-rate: 2
+  default-window-size-seconds: 5
+  default-max-requests: 10
+  global-filter:
+    enabled: false
+
+logging:
+  level:
+    root: WARN
+    com.gateflow: DEBUG

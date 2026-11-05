@@ -1,0 +1,50 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gateflow
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 1000ms
+
+rate-limiter:
+  enabled: true
+  fail-open: false                    # If Redis fails: false = 429 / fail-close; true = bypass / fail-open
+  default-algorithm: TOKEN_BUCKET     # Default algorithm: TOKEN_BUCKET or SLIDING_WINDOW
+  default-capacity: 100               # Max burst capacity
+  default-refill-rate: 10             # Refill tokens per second
+  default-window-size-seconds: 60     # Sliding window size in seconds
+  default-max-requests: 100           # Max requests within the sliding window
+  global-filter:
+    enabled: true                     # Global layer 1 rate limit across all endpoints
+    capacity: 1000                    # Global capacity per IP
+    refill-rate: 100                  # Global refill rate per second per IP
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  level:
+    root: INFO
+    com.gateflow: DEBUG

@@ -1,0 +1,51 @@
+### GateFlow Distributed Rate Limiter - HTTP Test Suite
+@baseUrl = http://localhost:8080
+
+### 1. Health Check
+GET {{baseUrl}}/api/health
+Accept: application/json
+
+### 2. Public Endpoint (No Route Rate Limit)
+GET {{baseUrl}}/api/public
+Accept: application/json
+
+### 3. Standard Rate Limited Endpoint (Token Bucket - Default Settings)
+GET {{baseUrl}}/api/limited
+Accept: application/json
+
+### 4. Strict Rate Limited Endpoint (5 requests max, 1 token/sec refill)
+# Run rapidly 6 times to observe 429 and fallback response
+GET {{baseUrl}}/api/strict
+Accept: application/json
+
+### 5. Sensitive Login Endpoint (Sliding Window Log - 3 requests per 60s)
+# Run 4 times to observe sliding window blocking brute force
+POST {{baseUrl}}/api/login
+Content-Type: application/json
+Accept: application/json
+
+{
+  "username": "admin",
+  "password": "supersecretpassword"
+}
+
+### 6. Get Rate Limiter Stats & Metrics
+GET {{baseUrl}}/api/rate-limiter/stats
+Accept: application/json
+
+### 7. Get Live Configuration Properties
+GET {{baseUrl}}/api/rate-limiter/config
+Accept: application/json
+
+### 8. Reset Rate Limit State for a Key
+DELETE {{baseUrl}}/api/rate-limiter/reset/gateflow:rl:token_bucket:127.0.0.1:GET:/api/strict
+Accept: application/json
+
+### 9. Prometheus Actuator Metrics Export
+GET {{baseUrl}}/actuator/prometheus
+Accept: text/plain
+
+### 10. Rate Limiter Specific Prometheus Metrics
+GET {{baseUrl}}/actuator/metrics/gateflow.ratelimit.requests.allowed
+Accept: application/json
+
